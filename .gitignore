@@ -1,3 +1,13 @@
+**/artifacts/
+**/models/
+**/data/
+**/wandb/
+**/artifacts/
+
+continual-architecture/__pycache__
+continual-architecture/mnist.pkl.gz
+*/.DS_Store
+.DS_Store
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
