@@ -1,7 +1,7 @@
 from jaxtyping import Float
 from torch import Tensor
 from typing import Set
-from data import MemorySetManager
+from .data import MemorySetManager
 
 
 class Task:

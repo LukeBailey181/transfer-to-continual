@@ -20,18 +20,18 @@ from torch.nn.utils import clip_grad_norm_
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from data import MemorySetManager
-from models import MLP, MNLIST_MLP_ARCH, CifarNet, CIFAR10_ARCH, CIFAR100_ARCH
-from training_utils import (
+from .data import MemorySetManager
+from .models import MLP, MNLIST_MLP_ARCH, CifarNet, CIFAR10_ARCH, CIFAR100_ARCH
+from .training_utils import (
     MNIST_FEATURE_SIZE,
     convert_torch_dataset_to_tensor,
     plot_cifar_image,
 )
-from tasks import Task
-from transfer_metrics.LEEP import LEEP
-from transfer_metrics.LogME import LogME
-from transfer_metrics.GBC import GBC
-from transfer_metrics.GBC_all import GBC_all
+from .tasks import Task
+from .transfer_metrics.LEEP import LEEP
+from .transfer_metrics.LogME import LogME
+from .transfer_metrics.GBC import GBC
+from .transfer_metrics.GBC_all import GBC_all
 
 DEBUG = False
 
@@ -326,13 +326,13 @@ class ContinualLearningManager(ABC):
                 task_idx = self.label_to_task_idx[label.item()]
                 label_splice = torch.tensor(sorted(list(self.tasks[task_idx].task_labels)))
                 outputs_splice = pred[label_splice]
-                argmax = torch.argmax(outputs_splice)
-                pred = label_splice[argmax].item()
+                argmax_val = torch.argmax(outputs_splice)
+                pred = label_splice[argmax_val].item()
 
                 correct_splice = pred == label
                 task_wise_correct_splice[task_idx] += correct_splice.item()
                 total_correct_splice += correct_splice.item()
-
+            
 
         task_accs = [cor/total for cor, total in zip(task_wise_correct, task_wise_examples)]
         task_accs_splice = [cor/total for cor, total in zip(task_wise_correct_splice, task_wise_examples)]
@@ -453,6 +453,7 @@ class ContinualLearningManager(ABC):
 
         memory_dataloaders: List[DataLoader] = train_dataloaders[:-1]
         memory_iterators = [iter(dataloader) for dataloader in memory_dataloaders]
+
         for _ in tqdm(range(epochs)):
             for terminal_batch_x, terminal_batch_y in terminal_dataloader:
                 
@@ -460,11 +461,16 @@ class ContinualLearningManager(ABC):
                 memory_batches = [
                     get_next_batch(iterator, dataloader) for iterator, dataloader in zip(memory_iterators, memory_dataloaders)
                 ]
-                memory_batch_x = torch.cat([batch[0] for batch in memory_batches])
-                memory_batch_y = torch.cat([batch[1] for batch in memory_batches])
 
-                batch_x = torch.cat([terminal_batch_x, memory_batch_x])
-                batch_y = torch.cat([terminal_batch_y, memory_batch_y])
+                # Concatenate with memory batches if there are any
+                if memory_batches:
+                    memory_batch_x = torch.cat([batch[0] for batch in memory_batches])
+                    memory_batch_y = torch.cat([batch[1] for batch in memory_batches])
+                    batch_x = torch.cat([terminal_batch_x, memory_batch_x])
+                    batch_y = torch.cat([terminal_batch_y, memory_batch_y])
+                else:
+                    batch_x = terminal_batch_x
+                    batch_y = terminal_batch_y
 
                 if DEBUG and self.task_index == 1:
                     # TODO make this generic to MNIST or CIFAR
@@ -484,7 +490,6 @@ class ContinualLearningManager(ABC):
                 ]  # Only select outputs for current labels
 
                 # Cutting outputs may require editing the labels
-                
                 loss = criterion(outputs, batch_y)
 
                 # Backward pass and optimize
@@ -581,6 +586,12 @@ class ContinualLearningManager(ABC):
         label_switcher = {old_label:new_label for old_label, new_label in zip(current_labels, range(len(current_labels)))}
         switcher = lambda x :label_switcher[x]
 
+        # Adjust the batch size
+        total_tasks = len(running_tasks)
+        per_task_batch_size = batch_size // total_tasks
+        if per_task_batch_size == 0:
+            per_task_batch_size = 1
+
         train_dataloaders = []
         test_x = []
         test_y = []
@@ -596,16 +607,18 @@ class ContinualLearningManager(ABC):
 
             train_dataloader = DataLoader(
                 TensorDataset(train_x, train_y),
-                batch_size=batch_size,
+                batch_size=per_task_batch_size,
                 shuffle=True,
             )
+
+            assert len(train_dataloader) != 0
 
             train_dataloaders.append(train_dataloader)
 
         # Add the terminal task
         train_dataloader = DataLoader(
             TensorDataset(terminal_task.train_x, terminal_task.train_y.apply_(switcher)),
-            batch_size=batch_size,
+            batch_size=per_task_batch_size,
             shuffle=True,
         )
         train_dataloaders.append(train_dataloader)
@@ -791,7 +804,7 @@ class Cifar100Manager(ContinualLearningManager, ABC):
         return train_x, train_y.long(), test_x, test_y.long()
 
 
-class Cifar100ManagerSplit(Cifar100Manager):
+class Cifar100Manager5Split(Cifar100Manager):
     """Continual learning on the split Cifar100 task.
 
     This has 5 tasks, each with 2 labels. [[0-19], [20-39], [40-59], [60-79], [80-99]]
@@ -819,6 +832,41 @@ class Cifar100ManagerSplit(Cifar100Manager):
         # TODO Make this task init a function of an input config file
         tasks = []
         label_ranges = [set(range(i, i + 20)) for i in range(0, 100, 20)]
+        for labels in label_ranges:
+            task = self.create_task(labels, self.memory_set_manager, active=False)
+            tasks.append(task)
+
+        tasks[0].active = True
+        return tasks
+
+class Cifar100Manager20Split(Cifar100Manager):
+    """Continual learning on the split Cifar100 task.
+
+    This has 20 tasks, each with 5 labels. [[0-4], [5-9], ... , [95-99]]
+    """
+
+    def __init__(
+        self,
+        memory_set_manager: MemorySetManager,
+        model: nn.Module,
+        dataset_path: str = "./data",
+        use_wandb=True,
+        transfer_metrics: List[str] = None,
+    ):
+        super().__init__(
+            memory_set_manager=memory_set_manager,
+            dataset_path=dataset_path,
+            use_wandb=use_wandb,
+            model=model,
+            transfer_metrics=transfer_metrics,
+        )
+
+    def _init_tasks(self) -> List[Task]:
+        """Initialize all tasks and return a list of them. For now hardcoded for Cifar100"""
+
+        # TODO Make this task init a function of an input config file
+        tasks = []
+        label_ranges = [set(range(i, i + 5)) for i in range(0, 100, 5)]
         for labels in label_ranges:
             task = self.create_task(labels, self.memory_set_manager, active=False)
             tasks.append(task)

@@ -1,14 +1,15 @@
 from typing import Dict, Union
-from data import RandomMemorySetManager
-from managers import (
+from .data import RandomMemorySetManager
+from .managers import (
     MnistManagerSplit,
     Cifar10ManagerSplit,
-    Cifar100ManagerSplit,
+    Cifar100Manager5Split,
+    Cifar100Manager20Split,
     Cifar10Full,
 )
 from pathlib import Path
 from dataclasses import dataclass
-from models import MLP, CifarNet
+from .models import MLP, CifarNet
 import torch
 import random
 import numpy as np
@@ -47,8 +48,10 @@ class Config:
                     setattr(self, key, MnistManagerSplit)
                 elif val == "cifar10_split":
                     setattr(self, key, Cifar10ManagerSplit)
-                elif val == "cifar100_split":
-                    setattr(self, key, Cifar100ManagerSplit)
+                elif val == "cifar100_5_split":
+                    setattr(self, key, Cifar100Manager5Split)
+                elif val == "cifar100_20_split":
+                    setattr(self, key, Cifar100Manager20Split)
                 elif val == "cifar10_full":
                     setattr(self, key, Cifar10Full)
             elif key == "model":
