@@ -48,10 +48,6 @@ else:
     print("Using CPU")
     DEVICE = torch.device("cpu")
 
-
-DEVICE = torch.device("cpu")
-
-
 class ContinualLearningManager(ABC):
     """Class that manages continual learning training.
 
@@ -421,14 +417,17 @@ class ContinualLearningManager(ABC):
             Final test accuracy.
         """
 
-        def get_next_batch(iterator, dataloader):
+        def get_next_batch(iterators, iterator_idx, dataloader):
+            iterator = iterators[iterator_idx]
             try:
                 # Try to fetch the next item
                 batch = next(iterator)
             except StopIteration:
                 # If StopIteration is raised, start the DataLoader from the beginning
-                iterator = iter(dataloader)
-                batch = next(iterator)
+                new_iterator = iter(dataloader)
+                batch = next(new_iterator)
+                # Replace iterator with new one
+                iterators[iterator_idx] = new_iterator
             return batch
 
         self.model.train()
@@ -459,7 +458,7 @@ class ContinualLearningManager(ABC):
                 
                 # Get the data from memory dataloaders
                 memory_batches = [
-                    get_next_batch(iterator, dataloader) for iterator, dataloader in zip(memory_iterators, memory_dataloaders)
+                    get_next_batch(memory_iterators, iterator_idx, dataloader) for iterator_idx, dataloader in enumerate(memory_dataloaders)
                 ]
 
                 # Concatenate with memory batches if there are any
@@ -804,7 +803,7 @@ class Cifar100Manager(ContinualLearningManager, ABC):
         return train_x, train_y.long(), test_x, test_y.long()
 
 
-class Cifar100Manager5Split(Cifar100Manager):
+class Cifar100ManagerSplit(Cifar100Manager):
     """Continual learning on the split Cifar100 task.
 
     This has 5 tasks, each with 2 labels. [[0-19], [20-39], [40-59], [60-79], [80-99]]
