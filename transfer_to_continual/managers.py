@@ -828,9 +828,40 @@ class Cifar100ManagerSplit(Cifar100Manager):
     def _init_tasks(self) -> List[Task]:
         """Initialize all tasks and return a list of them. For now hardcoded for Cifar100"""
 
+        superclasses = {0: [72, 4, 95, 30, 55],
+                        1: [73, 32, 67, 91, 1],
+                        2: [92, 70, 82, 54, 62],
+                        3: [16, 61, 9, 10, 28],
+                        4: [51, 0, 53, 57, 83],
+                        5: [40, 39, 22, 87, 86],
+                        6: [20, 25, 94, 84, 5],
+                        7: [14, 24, 6, 7, 18],
+                        8: [43, 97, 42, 3, 88],
+                        9: [37, 17, 76, 12, 68],
+                        10: [49, 33, 71, 23, 60],
+                        11: [15, 21, 19, 31, 38],
+                        12: [75, 63, 66, 64, 34],
+                        13: [77, 26, 45, 99, 79],
+                        14: [11, 2, 35, 46, 98],
+                        15: [29, 93, 27, 78, 44],
+                        16: [65, 50, 74, 36, 80],
+                        17: [56, 52, 47, 59, 96],
+                        18: [8, 58, 90, 13, 48],
+                        19: [81, 69, 41, 89, 85]}
+        
+        groups = {"items and vehicles": [3, 5, 6, 18, 19], "land animals": [8, 11, 12, 15, 16], "nature": [2, 4, 10, 13, 17], "rest (sea and small animals, manmade)": [0, 1, 7, 9, 14]}
+
         # TODO Make this task init a function of an input config file
+        label_ranges = []
+        for group in groups:
+            for idx in range(5):
+                cur_range = set()
+                for superclass in groups[group]:
+                    cur_range.add(superclasses[superclass][idx])
+                label_ranges.append(cur_range)
+
         tasks = []
-        label_ranges = [set(range(i, i + 20)) for i in range(0, 100, 20)]
+        
         for labels in label_ranges:
             task = self.create_task(labels, self.memory_set_manager, active=False)
             tasks.append(task)
